@@ -39,7 +39,7 @@ python3 app.py
 
 若端口已占用，可在启动命令末尾加 `--port 8766`，再打开 <http://127.0.0.1:8766>。启动脚本也接受这个参数。
 
-1.0.0 的 Windows Python 3.9/3.13 自动化测试及 `launch.bat --help` 已在 GitHub Actions 通过；1.0.1 的新一轮跨平台 CI 尚待确认。Windows 图形界面尚未人工验证。[按版本查看验证记录](docs/VALIDATION.md)
+1.0.1 已在 GitHub Actions 通过 Windows Python 3.9/3.13、Ubuntu Python 3.9/3.13 和 macOS Python 3.13 的全部 5 个任务，每个任务包含 84 项自动化测试和对应平台的启动脚本入口检查。Windows 图形界面尚未人工验证。[按版本查看验证记录](docs/VALIDATION.md)
 
 命令行保留终端原有编码。若终端只能显示 ASCII 或 cp1252 等字符集，无法表示的中文会显示为 `\uXXXX` 等转义，避免因打印提示而崩溃；导出文件仍使用 UTF-8，不受终端编码影响。
 
