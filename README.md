@@ -165,3 +165,5 @@ python3 examples/generate_example.py --check
 ```
 
 手动界面检查可从加载示例开始，确认 18 个有效观测、6 个参考档位，随后切换列、修改单位并分别打开三类导出文件。真实数据的质量、参考量来源和实验条件需要使用者自行核实。
+
+当前实现和实测范围见 [本地验证记录](docs/VALIDATION.md)，接口与统计约定见 [架构说明](docs/ARCHITECTURE.md)。[GitHub Actions 配置](.github/workflows/test.yml) 包含 Windows、macOS、Linux；配置存在不代表这些平台已测试通过。
