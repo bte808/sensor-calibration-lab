@@ -36,6 +36,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Run CSV import state regressions
+        run: node --test tests/test_import_state.js
       - name: Run calculation, HTTP and replay tests
         run: python -m unittest discover -s tests -v
       - name: Verify deterministic synthetic data

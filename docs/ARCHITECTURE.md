@@ -14,6 +14,8 @@ Educational forward sensor calibration: reference x, sensor output y, ordinary l
 - `analyze_csv(text: str, x_column: str, y_column: str, x_unit: str = "", y_unit: str = "") -> dict`: strip numeric whitespace; finite floats only with absolute magnitude <=1e100. Exclude and list records with missing/non-numeric/non-finite/out-of-range selected values, including nonzero decimal text that underflows to zero during float parsing. Need >=3 valid pairs and >=2 distinct reference values. Reject same selected column. Unit strings trimmed, <=32 characters, no conversion. Column choices must match headers.
 - `create_bundle(text, x_column, y_column, x_unit="", y_unit="") -> dict`: calls analysis, returns `schema_version: 1`, `app_version`, `generated_at` ISO UTC, `source: {sha256, csv_text}`, `settings: {x_column,y_column,x_unit,y_unit}`, `analysis`. SHA256 is of UTF-8 exact input text.
 
+When fewer than three valid pairs remain, the error includes the valid/excluded counts and up to three excluded records, identifying their physical end line, selected column names, and reasons. It reports the number of additional exclusions without printing them all. Reasons longer than 240 characters are shortened to their first and last 112 characters with a truncation marker. If no records were excluded, the message states exactly how many more valid pairs are needed. These diagnostics change neither the accepted-data calculations nor the report schema, so `APP_VERSION` remains 1.0.1.
+
 ## Analysis JSON
 
 ```
@@ -49,6 +51,20 @@ If a nonzero final result overflows, becomes non-finite, or underflows to zero d
 - Bind only 127.0.0.1; no external assets or upload/storage service.
 
 The UI exports a full JSON bundle (raw CSV and parameters included), row CSV, and printable HTML report. Synthetic example: 6 reference temperature levels, 3 repetitions per level, deterministic output voltage values; filenames and documentation explicitly identify it as synthetic.
+
+## Browser import state
+
+A real file selection clears the previous accepted CSV, analysis bundle, visible results, preview, and column/unit settings before any size check, file read, UTF-8 decode, or CSV inspection request. Failure retains the attempted file name and an actionable error, marks the source as an import failure, and leaves calculation and export disabled. File read failures and invalid UTF-8 have separate messages. The selected `File` object is captured before clearing the native picker value, allowing the same file name to be selected again after correction.
+
+An empty selection or cancellation does not clear previously accepted data or results and sends no request. Import and analysis operations share a synchronous busy guard: the file picker and example button are disabled until the operation finishes. A programmatically dispatched file change while busy is ignored after clearing the picker; it does not replace the current task's source card. Submitting with no accepted CSV returns without clearing the existing import error.
+
+Loading the synthetic example resets the old dataset before fetching it, with the same failure state as file import. CSV inspection establishes the newly accepted dataset; a later analysis failure retains that dataset, preview, and settings so the user can correct the analysis choices. The import-state and diagnostic changes retain application version 1.0.1 because calculations and report format are unchanged.
+
+## Frontend development checks
+
+Run `node --test tests/test_import_state.js` with Node.js 24. The test uses Node's built-in test runner and VM to exercise the actual `web/app.js` event handlers with a small DOM and local fetch stub. All fixtures are synthetic. It checks import state transitions; it does not replace browser rendering checks or the Python CSV/statistical tests. No npm packages or installation step are required.
+
+The CI workflow configures Node 24 with `actions/setup-node@v7` and runs this command in every OS/Python matrix job. This describes the configured checks, not a result for the current commit. Node is a development/CI tool only; running the application still requires only Python and a browser.
 
 ## CLI replay, text encoding, and output commit
 

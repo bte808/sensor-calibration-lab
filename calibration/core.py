@@ -183,7 +183,22 @@ def analyze_csv(
             valid.append((source_line, x, y))
     n = len(valid)
     if n < 3:
-        raise CalibrationError("至少需要 3 对有效数值；当前有 {} 对，排除了 {} 条记录。".format(n, len(excluded)))
+        message = "至少需要 3 对有效数值；当前有 {} 对，排除了 {} 条记录。".format(n, len(excluded))
+        if excluded:
+            details = []
+            for row in excluded[:3]:
+                reason = row["reason"]
+                if len(reason) > 240:
+                    reason = reason[:112] + "…" + reason[-112:] + "（过长信息已截断）"
+                details.append("CSV 第 {} 行（记录结束行）：{}".format(row["source_line"], reason))
+            message += " 排除记录：" + "；".join(details) + "。"
+            remaining = len(excluded) - len(details)
+            if remaining:
+                message += " 另有 {} 条排除记录未显示。".format(remaining)
+            message += " 请修正数值或补充数据，确保至少有 3 对有效观测。数值使用点号小数（如 0.5），单位请在单位栏单独填写。"
+        else:
+            message += " 请再增加 {} 对参考量与传感器输出观测，使有效数据至少达到 3 对。".format(3 - n)
+        raise CalibrationError(message)
     xs = [row[1] for row in valid]
     ys = [row[2] for row in valid]
     levels = sorted(set(xs))

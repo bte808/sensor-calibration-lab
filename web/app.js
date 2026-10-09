@@ -37,16 +37,34 @@ async function api(path, data) {
   return result;
 }
 
-async function loadText(text, name, synthetic) {
-  // Invalidate old results before validation: a failed import must never leave an exportable stale result.
+async function importData(name, work) {
+  // Clear the accepted dataset before any read, decode, or request can fail.
   invalidate();
   state.text = "";
+  state.name = "";
+  state.synthetic = false;
   $("results").hidden = true;
+  $("stale-note").hidden = true;
   $("empty-state").hidden = false;
   $("preview-section").hidden = true;
+  $("preview-table").replaceChildren();
+  $("preview-count").textContent = "";
+  $("x-column").replaceChildren();
+  $("y-column").replaceChildren();
+  $("x-unit").value = "";
+  $("y-unit").value = "";
   $("source-kind").textContent = "正在检查";
   $("source-name").textContent = name;
   $("source-details").textContent = "读取本地数据…";
+  try { await work(); }
+  catch (error) {
+    $("source-kind").textContent = "导入失败";
+    $("source-details").textContent = "没有可计算的数据，请修正文件后重新选择。";
+    throw error;
+  }
+}
+
+async function loadText(text, name, synthetic) {
   const inspected = await api("/api/inspect", { csv_text: text });
   state.text = text;
   state.name = name;
@@ -58,6 +76,7 @@ async function loadText(text, name, synthetic) {
   $("x-unit").value = synthetic ? "°C" : "";
   $("y-unit").value = synthetic ? "V" : "";
   $("source-kind").textContent = synthetic ? "合成示例" : "本地导入";
+  $("source-name").textContent = name;
   $("source-details").textContent = `${inspected.row_count} 行 · ${inspected.headers.length} 列 · ${inspected.delimiter === "\t" ? "制表符" : inspected.delimiter === ";" ? "分号" : "逗号"}分隔`;
   $("preview-count").textContent = `前 ${inspected.preview.length} 行 / 共 ${inspected.row_count} 行`;
   $("preview-table").innerHTML = `<thead><tr>${inspected.headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${inspected.preview.map((row) => `<tr>${row.map((cell) => `<td>${esc(cell)}</td>`).join("")}</tr>`).join("")}</tbody>`;
@@ -85,28 +104,36 @@ async function operation(work) {
 }
 
 $("load-example").addEventListener("click", () => operation(async () => {
-  const example = await api("/api/example");
   $("csv-file").value = "";
-  await loadText(example.csv_text, example.name, true);
+  await importData("合成示例", async () => {
+    const example = await api("/api/example");
+    await loadText(example.csv_text, example.name, true);
+  });
   await analyze();
 }));
 
 $("csv-file").addEventListener("change", () => {
   const file = $("csv-file").files[0];
-  if (!file) return;
-  operation(async () => {
-    invalidate();
+  // Retain the File object, then clear the picker so the same file can be
+  // selected again after correction. The source card shows the active name.
+  $("csv-file").value = "";
+  if (!file || state.busy) return;
+  return operation(() => importData(file.name, async () => {
     if (file.size > 1024 * 1024) throw new Error("文件超过 1 MiB。请截取本次标定所需的数据后重试。");
+    let bytes;
+    try { bytes = await file.arrayBuffer(); }
+    catch (_) { throw new Error("无法读取文件。请确认文件仍存在且可读取后重新选择。"); }
     let text;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer()); }
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
     catch (_) { throw new Error("文件不是有效的 UTF-8 文本。请从 Excel 另存为 CSV UTF-8 后导入。"); }
     await loadText(text, file.name, false);
-  });
+  }));
 });
 
 $("settings-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  operation(async () => { invalidate(); await analyze(); });
+  if (!state.text) return;
+  return operation(async () => { invalidate(); await analyze(); });
 });
 ["x-column", "y-column", "x-unit", "y-unit"].forEach((id) => $(id).addEventListener("input", invalidate));
 

@@ -126,6 +126,18 @@ class LocalHttpTests(unittest.TestCase):
         self.assertEqual(analysis["repeatability"]["repeated_groups"], 6)
         self.assertEqual(analysis["repeatability"]["degrees_of_freedom"], 12)
 
+    def test_insufficient_valid_pairs_report_csv_locations_and_recovery(self):
+        response = self.request("POST", "/api/analyze", {
+            "csv_text": "reference;output\n0;0,5\n10;0,7\n20;0,9\n",
+            "x_column": "reference", "y_column": "output",
+        })
+        message = self.assert_json_error(response, 400)["error"]
+        self.assertIn("当前有 0 对，排除了 3 条记录", message)
+        for line in (2, 3, 4):
+            self.assertIn("CSV 第 {} 行".format(line), message)
+        self.assertIn("“output”不是可解析的数值", message)
+        self.assertIn("点号小数（如 0.5）", message)
+
     def test_exact_loopback_origin_is_accepted(self):
         origin = "http://127.0.0.1:{}".format(self.port)
         status, _, _ = self.request("POST", "/api/inspect", {"csv_text": CSV_TEXT}, {"Origin": origin})
