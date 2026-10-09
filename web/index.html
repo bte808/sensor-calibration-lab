@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>传感器标定实验台 · Sensor Calibration Lab</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/"><span class="brand-icon">∿</span> SENSOR CALIBRATION LAB</a><span class="local"><span></span> 本机运行 · 无外部依赖</span></header>
+  <main>
+    <div class="intro"><div><div class="eyebrow">MEASUREMENT / 01</div><h1>传感器标定实验台</h1><p>从参考量到传感器输出，读懂一条标定曲线。</p></div><div class="model-label">线性模型<span>y = ax + b</span></div></div>
+    <div id="message" class="message" role="alert" hidden></div>
+    <div class="layout">
+      <aside class="sidebar">
+        <section class="card input-card"><div class="section-title"><span class="step">01</span><h2>选择数据</h2></div>
+          <label class="upload" for="csv-file"><span class="upload-icon">↥</span><strong>导入 CSV 文件</strong><span>UTF-8 · 逗号 / 分号 / 制表符</span><small>最多 1 MiB、20,000 行、50 列</small></label>
+          <input id="csv-file" type="file" accept=".csv,.tsv,text/csv,text/tab-separated-values">
+          <button id="load-example" class="button secondary full" type="button">载入合成示例</button>
+          <div class="source"><span id="source-kind" class="tag">尚未载入</span><strong id="source-name">选择文件或使用示例</strong><small id="source-details">源数据仅在本机处理</small></div>
+        </section>
+        <section class="card"><div class="section-title"><span class="step">02</span><h2>定义标定关系</h2></div>
+          <form id="settings-form"><fieldset id="settings-fields" disabled>
+            <label for="x-column">参考量 <span class="axis-tag">x</span></label><select id="x-column" required></select>
+            <label for="x-unit" class="unit-label">参考量单位</label><input id="x-unit" type="text" maxlength="32" placeholder="如 °C、mm、N" autocomplete="off">
+            <div class="field-divider"></div>
+            <label for="y-column">传感器输出 <span class="axis-tag">y</span></label><select id="y-column" required></select>
+            <label for="y-unit" class="unit-label">输出单位</label><input id="y-unit" type="text" maxlength="32" placeholder="如 V、mA" autocomplete="off">
+            <p class="hint">单位只作标注，不自动换算。</p>
+            <button id="analyze" class="button primary full" type="submit">计算标定结果 <span>→</span></button>
+          </fieldset></form>
+        </section>
+        <div class="method-note"><strong>理解模型的边界</strong><p>普通最小二乘将参考量视为固定值。重复性描述同一参考量下的输出离散程度，不等同于准确度或测量不确定度。</p><p>用于学习与展示，不是计量认证工具。</p></div>
+      </aside>
+      <div class="workspace">
+        <div id="empty-state" class="card empty"><span>∿</span><h2>让数据说出标定关系</h2><p>导入参考量和传感器输出两列数据，<br>或载入已明确标注的合成示例。</p></div>
+        <div id="results" hidden>
+          <div class="result-heading"><div><span class="eyebrow">CALIBRATION RESULT</span><h2>线性标定分析</h2></div><span id="data-badge" class="tag"></span></div>
+          <div id="synthetic-note" class="synthetic-note" hidden>当前为确定性合成数据，用于演示计算流程，不代表真实传感器或实验结果。</div>
+          <div id="stale-note" class="message info" hidden>设置已修改，请重新计算以更新结果和导出。</div>
+          <div class="metrics"><div class="metric"><span>灵敏度 / 斜率 a</span><strong id="slope">—</strong><small id="slope-unit"></small></div><div class="metric"><span>零点偏置 / 截距 b</span><strong id="intercept">—</strong><small id="intercept-unit"></small></div><div class="metric"><span>决定系数 R²</span><strong id="r-squared">—</strong><small>线性模型的拟合程度</small></div><div class="metric"><span>残差 RMSE</span><strong id="rmse">—</strong><small id="rmse-unit"></small></div></div>
+          <section class="card chart-card"><div class="chart-heading"><div><h3>标定曲线</h3><p id="equation">y = ax + b</p></div><div class="legend"><span class="dot"></span> 观测点 <span class="line"></span> 线性拟合</div></div><div id="fit-chart" class="chart"></div><p id="plot-note" class="hint"></p></section>
+          <section class="card chart-card residual-card"><div class="chart-heading"><div><h3>残差分布</h3><p>观测输出 − 拟合输出</p></div><span id="residual-stat" class="chart-stat"></span></div><div id="residual-chart" class="chart"></div></section>
+          <div class="details-grid"><section class="card"><div class="chart-heading"><div><h3>重复测量的重复性</h3><p>相同数值的参考量归为一组</p></div></div><div class="repeat-summary"><strong id="pooled-std">—</strong><span id="repeat-meta"></span></div><div class="table-scroll"><table><thead><tr><th>参考量 x</th><th>次数</th><th>输出均值</th><th>样本标准差</th></tr></thead><tbody id="groups-body"></tbody></table></div><p class="hint">合并标准差按组内自由度加权；单次测量组没有样本标准差。</p></section>
+          <section class="card"><h3>计算记录</h3><div id="counts" class="counts"></div><ul id="warnings" class="warnings"></ul><details id="excluded-details" hidden><summary>查看被排除的行</summary><ul id="excluded-list"></ul></details><details><summary>统计定义与假设</summary><div class="definitions"><p>残差 eᵢ = yᵢ − (axᵢ + b)</p><p>RMSE = √(Σeᵢ² / n)</p><p>残差标准差 s = √(Σeᵢ² / (n − 2))</p><p>组内合并标准差 sᵣ = √[ΣⱼΣᵢ(yᵢⱼ − ȳⱼ)² / Σⱼ(nⱼ − 1)]</p><p>R² = 1 − SSE / SST；输出恒定时不定义。R² 高不等于标定准确。</p><p>仅排除选中列中的空值、无效或非有限数字；不自动删除离群点。n 为有效数值对数。</p></div></details></section></div>
+          <section class="card export-card"><div><h3>带走一份可复算的结果</h3><p>JSON 包含原始 CSV、选列、单位、算法版本与 SHA-256。</p></div><div class="export-buttons"><button id="export-json" class="button secondary" type="button">完整 JSON</button><button id="export-csv" class="button secondary" type="button">结果 CSV</button><button id="export-html" class="button primary" type="button">HTML 报告 ↗</button></div></section>
+        </div>
+        <details id="preview-section" class="card preview" hidden><summary>查看原始数据预览 <span id="preview-count"></span></summary><div class="table-scroll"><table id="preview-table"></table></div></details>
+      </div>
+    </div>
+    <footer><span>Sensor Calibration Lab · v1.0.0</span><span>Python 标准库 · 数据留在本机</span></footer>
+  </main>
+</body>
+</html>

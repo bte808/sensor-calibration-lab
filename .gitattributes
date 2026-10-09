@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.csv text eol=lf
+launch.command text eol=lf
+launch.bat text eol=crlf

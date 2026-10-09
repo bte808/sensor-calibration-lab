@@ -1,0 +1,49 @@
+name: Cross-platform checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.9'
+          - os: ubuntu-latest
+            python: '3.13'
+          - os: windows-latest
+            python: '3.9'
+          - os: windows-latest
+            python: '3.13'
+          - os: macos-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run calculation, HTTP and replay tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify deterministic synthetic data
+        run: python examples/generate_example.py --check
+      - name: Verify command-line entry point
+        run: python app.py --help
+      - name: Windows launcher smoke check
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call launch.bat --help
+      - name: POSIX launcher smoke check
+        if: runner.os != 'Windows'
+        run: sh launch.command --help
