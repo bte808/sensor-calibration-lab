@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 import tempfile
@@ -155,6 +156,32 @@ def _write_new_report(output, report):
                     pass
 
 
+def _analysis_matches(expected, reported):
+    """Compare float fields as binary64 values, keeping the rest strictly typed."""
+    if type(expected) is float:
+        # JSON.stringify can turn 1.0000000000000001e18 into the integer text
+        # 1000000000000000100. Both denote the same browser/Python float, but
+        # Python's direct int-to-float equality compares their exact values.
+        if type(reported) not in (int, float):
+            return False
+        try:
+            numeric = float(reported)
+        except OverflowError:
+            return False
+        return math.isfinite(numeric) and numeric == expected
+    if type(expected) is not type(reported):
+        return False
+    if isinstance(expected, dict):
+        return expected.keys() == reported.keys() and all(
+            _analysis_matches(value, reported[key]) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(expected) == len(reported) and all(
+            _analysis_matches(left, right) for left, right in zip(expected, reported)
+        )
+    return expected == reported
+
+
 def replay_bundle(path, output):
     """Verify source integrity and reproduce analysis from an exported bundle."""
     bundle = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -170,7 +197,7 @@ def replay_bundle(path, output):
     if not isinstance(settings, dict):
         raise ValueError("报告设置必须是 JSON 对象。")
     reproduced = create_bundle(text, **{key: settings[key] for key in ("x_column", "y_column", "x_unit", "y_unit")})
-    if bundle.get("app_version") == APP_VERSION and reproduced["analysis"] != bundle.get("analysis"):
+    if bundle.get("app_version") == APP_VERSION and not _analysis_matches(reproduced["analysis"], bundle.get("analysis")):
         raise ValueError("重新计算的分析结果与报告不一致。")
     if "presentation" in bundle:
         presentation = bundle["presentation"]
