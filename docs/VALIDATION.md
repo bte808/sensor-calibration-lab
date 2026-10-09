@@ -1,4 +1,4 @@
-# 本地验证记录
+# 验证记录
 
 验证日期：2026-10-09。示例及用于交互测试的 CSV 均为合成数据。
 
@@ -22,10 +22,23 @@ macOS Safari 和 Chrome 均打开本地界面并显示合成示例结果。Chrom
 4. 下载完整 JSON、结果 CSV 和 HTML 报告。实际下载的 JSON 使用 `app.py --replay` 复算成功并核对 SHA-256；结果 CSV 含 18 个有效观测；HTML 在独立浏览器标签页打开，保留合成声明、图表、统计定义与输入指纹。
 5. 视觉检查：标定曲线、残差、重复组表、导出区和 HTML 报告正常显示。修复了较窄桌面宽度下指标换行问题。
 
+## 远端自动化已通过
+
+[GitHub Actions 运行 37869748997](https://github.com/bte808/sensor-calibration-lab/actions/runs/37869748997) 对提交 `79ce588eb94286792604a216173ff7d670c04eb3` 的 5 个任务全部成功：
+
+| 系统 | Python | 结果 |
+| --- | --- | --- |
+| Windows | 3.9 | 通过 |
+| Windows | 3.13 | 通过 |
+| Ubuntu Linux | 3.9 | 通过 |
+| Ubuntu Linux | 3.13 | 通过 |
+| macOS | 3.13 | 通过 |
+
+各任务运行 59 项计算、HTTP 和 CLI 测试、合成示例一致性检查及命令行入口检查。Windows 另运行 `launch.bat --help`，macOS/Linux 运行 `sh launch.command --help`。全部适用步骤均成功；非当前平台的启动脚本步骤正常跳过。
+
 ## 未运行及限制
 
-- Windows 实机界面和 Windows 启动脚本未实际运行。
-- GitHub Actions 尚未运行；已配置 Windows（Python 3.9/3.13）、Linux（3.9/3.13）及 macOS（3.13）的测试矩阵，并检查平台启动脚本。请以仓库实际提交对应的 Actions 结果为准。
+- Windows 图形界面未人工验证；Windows 启动脚本已在托管 runner 中通过入口检查，不代表所有个人电脑配置都经过验证。
 - 响应式样式已实现，但未做手机实机验证或全面浏览器兼容性测试。
 - 本工具不提供硬件接入、反向回归、计量认证、不确定度预算或独立准确度验证。
 

@@ -37,7 +37,7 @@ python3 app.py
 
 若端口已占用，可在启动命令末尾加 `--port 8766`，再打开 <http://127.0.0.1:8766>。启动脚本也接受这个参数。
 
-Windows 路径和命令已提供，**目前尚未在 Windows 实机上验证**；不要将兼容设计视为已完成该平台测试。
+Windows 的 Python 3.9/3.13 自动化测试及 `launch.bat --help` 已在 GitHub Actions 通过；Windows 图形界面尚未人工验证。[跨平台运行记录](https://github.com/bte808/sensor-calibration-lab/actions)
 
 ## 用一次合成数据认识标定
 
@@ -166,4 +166,4 @@ python3 examples/generate_example.py --check
 
 手动界面检查可从加载示例开始，确认 18 个有效观测、6 个参考档位，随后切换列、修改单位并分别打开三类导出文件。真实数据的质量、参考量来源和实验条件需要使用者自行核实。
 
-当前实现和实测范围见 [本地验证记录](docs/VALIDATION.md)，接口与统计约定见 [架构说明](docs/ARCHITECTURE.md)。[GitHub Actions 配置](.github/workflows/test.yml) 包含 Windows、macOS、Linux；配置存在不代表这些平台已测试通过。
+当前实现和实测范围见 [验证记录](docs/VALIDATION.md)，接口与统计约定见 [架构说明](docs/ARCHITECTURE.md)。[GitHub Actions 配置](.github/workflows/test.yml) 包含 Windows、macOS、Linux；后续修改请以相应提交的实际运行结果为准。
