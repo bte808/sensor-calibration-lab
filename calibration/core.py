@@ -10,10 +10,12 @@ import hashlib
 import io
 import math
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, localcontext
+from fractions import Fraction
 from typing import Dict, List, Tuple
 
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 MAX_ROWS = 20_000
 MAX_COLUMNS = 50
 MAX_MAGNITUDE = 1e100
@@ -121,54 +123,38 @@ def _number(value: str, column: str) -> Tuple[float, str]:
         return 0.0, "“{}”不是有限数值".format(column)
     if abs(number) > MAX_MAGNITUDE:
         return 0.0, "“{}”的绝对值超过 1e100".format(column)
+    if number == 0.0:
+        # float() silently maps sufficiently small nonzero decimals to zero.
+        # Do not turn those observations into exact zeros or merge their levels.
+        try:
+            if not Decimal(value.strip()).is_zero():
+                return 0.0, "“{}”的非零数值发生浮点下溢，无法表示；请调整单位".format(column)
+        except InvalidOperation:
+            return 0.0, "“{}”的数值超出支持的表示范围".format(column)
     return number, ""
 
 
-def _finite(value: float) -> float:
-    if not math.isfinite(value):
-        raise CalibrationError("计算结果超出浮点数范围，请调整数据的数量级或单位后重试。")
-    return value
-
-
-def _center(values: List[float]) -> Tuple[float, List[float], float]:
-    """Return mean, normalized centered values, and their coordinate scale.
-
-    Center in normalized coordinates rather than subtracting a rounded mean.
-    This preserves small spans around large offsets, even when the mean itself
-    falls between two representable input floats. Constant decimals stay exact.
-    """
-    anchor = values[0]
-    offsets = [value - anchor for value in values]
-    scale = max(map(abs, offsets))
-    if scale == 0:
-        return anchor, [0.0] * len(values), 0.0
-    normalized = [value / scale for value in offsets]
-    average = math.fsum(normalized) / len(values)
-    mean = math.fsum((anchor, average * scale))
-    return mean, [value - average for value in normalized], scale
-
-
-def _scaled_ratio(factor: float, numerator: float, denominator: float) -> float:
-    """Evaluate factor * numerator / denominator without intermediate overflow."""
-    if factor == 0 or numerator == 0:
-        return 0.0
-    fm, fe = math.frexp(factor)
-    nm, ne = math.frexp(numerator)
-    dm, de = math.frexp(denominator)
+def _result_float(value, label: str) -> float:
+    """Round only a final value; reject overflow and a nonzero rounded to zero."""
     try:
-        result = math.ldexp(fm * nm / dm, fe + ne - de)
+        result = float(value)
     except OverflowError as exc:
-        raise CalibrationError("拟合斜率超出浮点数范围，请调整参考量或输出的单位后重试。") from exc
-    return _finite(result)
+        raise CalibrationError("{}超出浮点数范围，无法表示；请调整数据数量级或单位。".format(label)) from exc
+    if not math.isfinite(result):
+        raise CalibrationError("{}超出浮点数范围，无法表示；请调整数据数量级或单位。".format(label))
+    if result == 0.0 and value != 0:
+        raise CalibrationError("{}的非零结果发生浮点下溢，无法表示；请调整数据数量级或单位。".format(label))
+    return result
 
 
-def _rms(values: List[float], denominator: int) -> float:
-    """Square, sum, and root in normalized coordinates to avoid underflow."""
-    scale = max(abs(value) for value in values)
-    if scale == 0:
+def _sqrt_result(variance: Fraction, label: str) -> float:
+    """Take a high-precision square root only after the exact variance is known."""
+    if variance == 0:
         return 0.0
-    result = scale * math.sqrt(math.fsum((value / scale) ** 2 for value in values) / denominator)
-    return _finite(result)
+    with localcontext() as context:
+        context.prec = 80
+        root = (Decimal(variance.numerator) / Decimal(variance.denominator)).sqrt()
+        return _result_float(root, label)
 
 
 def analyze_csv(
@@ -204,56 +190,53 @@ def analyze_csv(
     if len(levels) < 2:
         raise CalibrationError("至少需要 2 个不同的参考量数值，才能进行线性标定。")
 
-    x_mean, x_normalized, x_scale = _center(xs)
-    y_mean, y_normalized, y_scale = _center(ys)
-    if x_scale == 0:
-        raise CalibrationError("参考量差异小于当前浮点精度，无法进行线性标定。")
-    xx = math.fsum(value * value for value in x_normalized)
-    if y_scale == 0:
-        normalized_slope = 0.0
-        slope = 0.0
-    else:
-        normalized_slope = math.fsum(
-            x * y for x, y in zip(x_normalized, y_normalized)
-        ) / xx
-        slope = _scaled_ratio(normalized_slope, y_scale, x_scale)
-    intercept = _finite(y_mean - slope * x_mean)
-    normalized_residuals = [
-        y - x * normalized_slope for x, y in zip(x_normalized, y_normalized)
-    ]
-    # Residuals are observed minus fitted in centered coordinates. Computing
-    # them before adding the output offset avoids cancellation. Stored fitted
-    # outputs are rounded to a float only after that subtraction.
-    residuals = [_finite(value * y_scale) for value in normalized_residuals]
-    predictions = [_finite(y - residual) for y, residual in zip(ys, residuals)]
-    if y_scale == 0:
-        r_squared = None
-    else:
-        ss_total = math.fsum(value * value for value in y_normalized)
-        ss_error = math.fsum(value * value for value in normalized_residuals)
-        r_squared = _finite(1 - ss_error / ss_total)
+    # Each accepted float is an exact rational. Keep OLS and every sum of
+    # squares exact so large spans cannot amplify normalized-coordinate
+    # rounding into apparent measurement errors. This does not recover decimal
+    # information already lost when the input text was converted to float.
+    exact_xs = [Fraction.from_float(value) for value in xs]
+    exact_ys = [Fraction.from_float(value) for value in ys]
+    sum_x, sum_y = sum(exact_xs), sum(exact_ys)
+    xx = sum(value * value for value in exact_xs) - sum_x * sum_x / n
+    xy = sum(x * y for x, y in zip(exact_xs, exact_ys)) - sum_x * sum_y / n
+    exact_slope = xy / xx
+    exact_intercept = (sum_y - exact_slope * sum_x) / n
+    exact_predictions = [exact_slope * x + exact_intercept for x in exact_xs]
+    exact_residuals = [y - predicted for y, predicted in zip(exact_ys, exact_predictions)]
+    ss_error = sum(value * value for value in exact_residuals)
+    ss_total = sum(value * value for value in exact_ys) - sum_y * sum_y / n
+    slope = _result_float(exact_slope, "拟合斜率")
+    intercept = _result_float(exact_intercept, "拟合截距")
+    # Round the reported parameters, predictions, and residuals independently.
+    # Reusing rounded parameters here would reintroduce cancellation errors.
+    predictions = [_result_float(value, "拟合输出") for value in exact_predictions]
+    residuals = [_result_float(value, "残差") for value in exact_residuals]
+    r_squared = _result_float(1 - ss_error / ss_total, "R²") if ss_total else None
 
-    grouped = {}  # type: Dict[float, List[float]]
-    for x, y in zip(xs, ys):
+    grouped = {}  # type: Dict[float, List[Fraction]]
+    for x, y in zip(xs, exact_ys):
         grouped.setdefault(x, []).append(y)
-    groups, within_deviations = [], []
+    groups = []
+    within_ss = Fraction(0)
     repeat_df, repeated_groups = 0, 0
     for x in levels:
         values = grouped[x]
         count = len(values)
-        mean, normalized, scale = _center(values)
-        deviations = [value * scale for value in normalized]
+        total = sum(values)
+        exact_mean = total / count
+        mean = _result_float(exact_mean, "组内均值")
         std = None
         if count > 1:
             repeated_groups += 1
             repeat_df += count - 1
-            within_deviations.extend(deviations)
-            std = _rms(deviations, count - 1)
+            group_ss = sum(value * value for value in values) - total * total / count
+            within_ss += group_ss
+            std = _sqrt_result(group_ss / (count - 1), "组内样本标准差")
         groups.append({"x": x, "count": count, "mean_y": mean, "std_y": std})
     warnings = []
     if len(levels) < 3:
         warnings.append("参考量只有 2 个不同水平；建议增加参考量水平，以便检查线性模型是否适合。")
-    if y_scale == 0:
+    if ss_total == 0:
         warnings.append("传感器输出为常量，R² 无定义；拟合不能表明传感器对参考量有响应。")
     if repeated_groups == 0:
         warnings.append("没有相同参考量下的重复测量，无法估计重复性；重复性返回空值。")
@@ -265,12 +248,12 @@ def analyze_csv(
         "counts": {"total": len(records), "valid": n, "excluded": len(excluded)},
         "fit": {"slope": slope, "intercept": intercept, "r_squared": r_squared},
         "metrics": {
-            "rmse_y": _rms(residuals, n),
-            "residual_std_y": _rms(residuals, n - 2),
-            "max_abs_residual_y": max(map(abs, residuals)),
+            "rmse_y": _sqrt_result(ss_error / n, "RMSE"),
+            "residual_std_y": _sqrt_result(ss_error / (n - 2), "残差标准差"),
+            "max_abs_residual_y": _result_float(max(map(abs, exact_residuals)), "最大绝对残差"),
         },
         "repeatability": {
-            "pooled_std_y": _rms(within_deviations, repeat_df) if repeat_df else None,
+            "pooled_std_y": _sqrt_result(within_ss / repeat_df, "合并重复性标准差") if repeat_df else None,
             "degrees_of_freedom": repeat_df,
             "repeated_groups": repeated_groups,
             "groups": groups,

@@ -3,6 +3,9 @@
 import argparse
 import hashlib
 import json
+import os
+import sys
+import tempfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -105,6 +108,53 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def configure_console():
+    """Keep the terminal encoding, escaping unsupported text instead of crashing."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
+
+
+def _commit_new_file(temporary, target):
+    """Publish a complete file without overwriting a concurrently created target."""
+    if os.name == "nt":
+        # Windows rename refuses an existing destination, including on FAT/exFAT.
+        os.rename(temporary, target)
+    else:
+        # POSIX rename would overwrite the destination; link refuses it instead.
+        os.link(temporary, target)
+
+
+def _write_new_report(output, report):
+    # Validate the entire UTF-8 payload before creating any file.
+    try:
+        payload = (json.dumps(report, ensure_ascii=False, allow_nan=False, indent=2) + "\n").encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError("报告包含非法 Unicode 字符，无法导出 UTF-8；未创建输出文件。") from error
+    target = Path(output)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="wb", dir=target.parent, prefix=".calibration-", suffix=".tmp", delete=False) as staged:
+            temporary = Path(staged.name)
+            staged.write(payload)
+            staged.flush()
+            os.fsync(staged.fileno())
+        _commit_new_file(temporary, target)
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except FileNotFoundError:
+                pass  # Windows rename already removed the temporary name.
+            except OSError as error:
+                # Cleanup must not hide a write failure or report a complete,
+                # successfully published report as a failed export.
+                try:
+                    print("Warning: temporary report cleanup failed: " + ascii(str(temporary)) + ": " + ascii(str(error)), file=sys.stderr)
+                except OSError:
+                    pass
+
+
 def replay_bundle(path, output):
     """Verify source integrity and reproduce analysis from an exported bundle."""
     bundle = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -131,15 +181,14 @@ def replay_bundle(path, output):
             "synthetic_example": presentation["synthetic_example"],
         }
     if output:
-        with Path(output).open("x", encoding="utf-8") as target:
-            json.dump(reproduced, target, ensure_ascii=False, allow_nan=False, indent=2)
-            target.write("\n")
+        _write_new_report(output, reproduced)
     print("复算成功；源数据 SHA-256 已核对。" + (" 结果已另存。" if output else ""))
     if bundle.get("app_version") != APP_VERSION:
         print("提示：原报告版本不同，已重新计算，但未要求与旧版结果完全一致。")
 
 
 def main():
+    configure_console()
     parser = argparse.ArgumentParser(description="传感器标定实验台（仅本地运行）")
     parser.add_argument("--port", type=int, default=8765, help="本地端口，默认 8765")
     parser.add_argument("--replay", metavar="REPORT.json", help="核对并复算已导出的 JSON 报告")

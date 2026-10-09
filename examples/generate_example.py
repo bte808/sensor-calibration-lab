@@ -4,6 +4,7 @@
 import argparse
 import csv
 import io
+import sys
 from decimal import Decimal
 from pathlib import Path
 
@@ -32,6 +33,9 @@ def generate_csv():
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="只检查现有 CSV 与公式一致，不写文件")
     args = parser.parse_args()
